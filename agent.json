@@ -1,0 +1,103 @@
+{
+  "name": "Brightsmile Dental Scheduler",
+  "greeting": "Thanks for calling Brightsmile Dental. Are you looking to book an appointment?",
+  "voice": { "voice_id": "alba" },
+  "system_prompt": "You are the scheduling assistant for Brightsmile Dental. Keep every reply under two sentences and speak naturally, like a receptionist on the phone.\n\nYou have no sense of today's date. Call get_today before reasoning about any day the caller mentions ('tomorrow', 'next Tuesday') and convert it to a YYYY-MM-DD date yourself.\n\nBooking sequence:\n1. Find out which service they want. Offered: cleaning, checkup, whitening, root-canal. Nothing else.\n2. Call check_availability and read back the open times.\n3. Once they pick a time, collect their full name and phone number. Read the phone number back digit by digit and get a yes before booking.\n4. Call book_appointment, then call send_confirmation with the confirmation code.\n5. Read the confirmation code aloud one character at a time.\n\nEvery tool returns a 'message' field. Base what you say on that field. If a tool returns ok=false, tell the caller what it says and offer the alternative it suggests. Never invent an opening, a confirmation code, or a price. If a tool fails twice, apologise and offer a callback.",
+  "keyterms": [
+    "Brightsmile",
+    "cleaning",
+    "checkup",
+    "whitening",
+    "root canal",
+    "hygienist",
+    "reschedule",
+    "confirmation code"
+  ],
+  "tools": [
+    {
+      "name": "get_today",
+      "description": "Get today's date and the next open clinic days. Call this before interpreting any relative day the caller mentions.",
+      "parameters": { "type": "object", "properties": {}, "required": [] },
+      "http": { "url": "{{BASE_URL}}/tools/get_today", "http_method": "POST" },
+      "timeout_seconds": 10
+    },
+    {
+      "name": "check_availability",
+      "description": "List open appointment times for a service on a specific date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "The service the caller wants.",
+            "enum": ["cleaning", "checkup", "whitening", "root-canal"]
+          },
+          "date": {
+            "type": "string",
+            "description": "The day to check, as YYYY-MM-DD.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "examples": ["2026-09-08", "2026-09-15"]
+          }
+        },
+        "required": ["service", "date"]
+      },
+      "http": { "url": "{{BASE_URL}}/tools/check_availability", "http_method": "POST" },
+      "timeout_seconds": 10
+    },
+    {
+      "name": "book_appointment",
+      "description": "Book a confirmed appointment slot. Only call after the caller has agreed to a specific time and confirmed their phone number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "enum": ["cleaning", "checkup", "whitening", "root-canal"]
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "examples": ["2026-09-08"]
+          },
+          "time": {
+            "type": "string",
+            "description": "Slot start in 24-hour HH:MM form.",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "examples": ["09:30", "14:00"]
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "The caller's full name as they said it."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Callback number in E.164 form, including country code.",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "examples": ["+14155552671", "+442071838750"]
+          }
+        },
+        "required": ["service", "date", "time", "customer_name", "phone"]
+      },
+      "http": { "url": "{{BASE_URL}}/tools/book_appointment", "http_method": "POST" },
+      "timeout_seconds": 15
+    },
+    {
+      "name": "send_confirmation",
+      "description": "Text the caller their appointment confirmation. Call immediately after a successful booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "confirmation_code": {
+            "type": "string",
+            "description": "The code returned by book_appointment.",
+            "pattern": "^[A-Z0-9]{6}$",
+            "examples": ["KGLDA4"]
+          }
+        },
+        "required": ["confirmation_code"]
+      },
+      "http": { "url": "{{BASE_URL}}/tools/send_confirmation", "http_method": "POST" },
+      "timeout_seconds": 10
+    }
+  ]
+}

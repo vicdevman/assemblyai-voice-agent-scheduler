@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brightsmile Dental — Voice Booking</title>
+<style>
+  :root {
+    --bg: #0f1319;
+    --panel: #161c24;
+    --panel-2: #1c242e;
+    --line: #29323d;
+    --text: #e7edf3;
+    --dim: #93a1b0;
+    --dimmer: #6b7885;
+    --accent: #4bb3a5;
+    --accent-dim: #17403b;
+    --warn: #d9a441;
+    --warn-dim: #3a2f14;
+    --mono: "SF Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh;
+  }
+
+  header.top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 18px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .brand { display: flex; align-items: baseline; gap: 12px; }
+  .brand h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .brand span { font-size: 12.5px; color: var(--dimmer); }
+
+  #status {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--dim);
+  }
+  #status[data-state="live"]  { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+  #status[data-state="busy"]  { color: var(--warn); border-color: var(--warn); background: var(--warn-dim); }
+  #status[data-state="error"] { color: #e0796b; border-color: #6d2e26; background: #331915; }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+    min-height: calc(100vh - 63px);
+  }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+  .pane { background: var(--bg); display: flex; flex-direction: column; min-height: 0; }
+
+  .pane-head {
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .pane-head h2 {
+    margin: 0;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    font-family: var(--mono);
+  }
+  .pane-head .hint { font-size: 12px; color: var(--dimmer); }
+
+  .scroll { flex: 1; overflow-y: auto; padding: 20px 22px; min-height: 240px; }
+
+  .empty { color: var(--dimmer); font-size: 14px; margin: 0; }
+
+  /* transcript */
+  .line { margin-bottom: 16px; }
+  .line .who {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--dimmer);
+    display: block;
+    margin-bottom: 3px;
+  }
+  .line.agent .who { color: var(--accent); }
+  .line p { margin: 0; }
+  .line.agent p { color: var(--text); }
+  .line.user p { color: var(--dim); }
+
+  /* tool calls */
+  .call {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    background: var(--panel);
+    padding: 11px 13px;
+    margin-bottom: 10px;
+  }
+  .call.warn { border-left-color: var(--warn); }
+  .call header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .call-name { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); }
+  .call.warn .call-name { color: var(--warn); }
+  .call-time { font-family: var(--mono); font-size: 11px; color: var(--dimmer); }
+  .call pre {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--dim);
+    background: var(--panel-2);
+    border-radius: 3px;
+    padding: 6px 8px;
+    margin: 8px 0 7px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .call-msg { margin: 0; font-size: 13.5px; color: var(--text); }
+
+  /* controls */
+  .controls {
+    padding: 18px 22px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 11px 22px;
+    border-radius: 5px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #08211d;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+  .meta { font-family: var(--mono); font-size: 11.5px; color: var(--dimmer); }
+  .meta b { color: var(--dim); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>Brightsmile Dental</h1>
+    <span>voice booking · AssemblyAI Voice Agent API</span>
+  </div>
+  <span id="status" data-state="idle">Idle</span>
+</header>
+
+<main>
+  <section class="pane">
+    <div class="pane-head">
+      <h2>Conversation</h2>
+      <span class="hint">speak naturally — you can interrupt</span>
+    </div>
+    <div class="scroll" id="transcript">
+      <p class="empty">Start the call and ask to book a cleaning.</p>
+    </div>
+    <div class="controls">
+      <button id="talk">Start call</button>
+      <span class="meta">agent <b id="agent-id">…</b></span>
+    </div>
+  </section>
+
+  <section class="pane">
+    <div class="pane-head">
+      <h2>AssemblyAI → your API</h2>
+      <span class="hint">server-side HTTP tools</span>
+    </div>
+    <div class="scroll" id="calls">
+      <p class="empty">
+        No calls yet. These arrive when AssemblyAI hits your booking API
+        directly — nothing in this browser handles them.
+      </p>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
