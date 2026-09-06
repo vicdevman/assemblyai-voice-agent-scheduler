@@ -179,14 +179,52 @@ inside the API, which can answer with something speakable:
 Now the agent asks the right question and the call completes. **Schema for what
 the agent can fix by re-asking; your API for what it needs explained.**
 
-## Status
+## Deploying it
 
-- [x] Booking API, verified end to end
-- [x] Agent definition with 4 HTTP tools and validated schemas
-- [x] Publish / update script
-- [x] Browser demo — mic capture, barge-in, live tool feed, call linking
-- [ ] Tutorial draft
+A tunnel is fine while you build, but the URL dies with your terminal. To put
+this somewhere permanent, note one thing first: **the calendar and the tool-call
+feed live in memory**, so this wants a long-running process, not a serverless
+function.
 
-Twilio is deliberately out of scope: trial numbers only dial pre-verified
-numbers, so a reader could never call the agent. The browser demo works for
-everyone.
+On Render, Railway or Fly it deploys as-is:
+
+```
+Build:  pip install -r requirements.txt
+Start:  uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Set `ASSEMBLYAI_API_KEY` in the host's environment, then point the agent at the
+new address and re-publish:
+
+```bash
+PUBLIC_API_BASE_URL=https://your-app.onrender.com
+python scripts/create_agent.py --update <agent_id>
+```
+
+Vercel supports FastAPI too, but its functions are ephemeral and can run on
+different instances per request. The browser polls `/api/events` several times a
+second, so it would keep missing calls that landed elsewhere. Move `store.py`
+onto a real database first and it works fine.
+
+You never need server-side WebSockets, whatever you choose. The browser talks
+straight to AssemblyAI; your API only ever answers plain HTTP.
+
+## Where to take it next
+
+This is a starting point, not a finished product. Obvious directions:
+
+- **Swap the in-memory store for a real database** so bookings survive restarts.
+- **Send a real SMS.** `send_confirmation` currently just marks a flag. Wire it
+  to Twilio, Africa's Talking, or whatever covers your region.
+- **Add reschedule and cancel tools.** Both need the agent to look an
+  appointment up by confirmation code first, which is a good exercise in
+  keeping tool sets small — the docs suggest staying under ten per phase.
+- **Handle the caller who wants the first available slot** rather than naming a
+  day, which means a tool that searches forward instead of checking one date.
+- **Put it on a phone number.** Deliberately left out here: Twilio trial numbers
+  only dial numbers you have verified in advance, so nobody else could ring it.
+  Once you are on a paid number, AssemblyAI connects over SIP.
+
+## Licence
+
+MIT. Use it, fork it, ship it.
