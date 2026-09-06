@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+import json
 import os
 from pathlib import Path
 
@@ -25,7 +26,8 @@ from . import store
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI(title="Voice Agent Scheduler", version="1.0.0")
-WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+ROOT = Path(__file__).resolve().parent.parent
+WEB_DIR = ROOT / "web"
 
 
 @app.middleware("http")
@@ -44,7 +46,7 @@ async def record_tool_calls(request, call_next):
         media_type=response.media_type,
     )
 
-PHONE_PATTERN = r"^\+[1-9]\d{1,14}$"
+E164_DIGITS = (8, 15)
 
 
 class AvailabilityRequest(BaseModel):
@@ -57,11 +59,28 @@ class BookingRequest(BaseModel):
     date: str
     time: str = Field(description="24-hour slot start, e.g. '14:30'")
     customer_name: str
-    phone: str = Field(pattern=PHONE_PATTERN)
+    phone: str
 
 
 class ConfirmationRequest(BaseModel):
     confirmation_code: str
+
+
+def _normalize_phone(raw: str) -> tuple[str | None, str]:
+    """Return (e164, problem). A national number is a question, not an error."""
+    cleaned = "".join(ch for ch in raw if ch.isdigit() or ch == "+")
+    lo, hi = E164_DIGITS
+
+    if cleaned.startswith("+"):
+        digits = cleaned[1:]
+        if digits.isdigit() and lo <= len(digits) <= hi and not digits.startswith("0"):
+            return "+" + digits, ""
+        return None, "incomplete"
+
+    digits = cleaned.lstrip("0")
+    if digits.isdigit() and lo <= len(digits) <= hi:
+        return None, "needs_country"
+    return None, "incomplete"
 
 
 def _parse_day(value: str) -> date | None:
@@ -127,6 +146,20 @@ def check_availability(req: AvailabilityRequest) -> dict:
     if day < date.today():
         return {"ok": False, "reason": "past_date", "message": "That date is in the past."}
 
+    if not store.is_open(day):
+        alternatives = store.next_open_days(day)
+        nxt = alternatives[0] if alternatives else None
+        return {
+            "ok": False,
+            "reason": "closed",
+            "suggested_date": nxt.isoformat() if nxt else None,
+            "message": (
+                f"We're closed at weekends. The next day we're open is "
+                f"{_speak_day(nxt)}, with {_speak_slots(store.available_slots(nxt))}."
+                if nxt else "We're closed at weekends."
+            ),
+        }
+
     slots = store.available_slots(day)
     if slots:
         return {
@@ -167,8 +200,26 @@ def book_appointment(req: BookingRequest) -> dict:
     if day is None:
         return {"ok": False, "reason": "bad_date", "message": "Date must be in YYYY-MM-DD form."}
 
+    phone, problem = _normalize_phone(req.phone)
+    if problem == "needs_country":
+        return {
+            "ok": False,
+            "reason": "needs_country_code",
+            "message": (
+                "I have the number but not the country code. Ask the caller which "
+                "country they're calling from, then send it in full — a Nigerian "
+                "0916 383 6950 becomes +2349163836950."
+            ),
+        }
+    if problem:
+        return {
+            "ok": False,
+            "reason": "bad_phone",
+            "message": "That number doesn't look complete. Ask the caller to repeat it.",
+        }
+
     try:
-        record = store.book(req.service, day, req.time, req.customer_name, req.phone)
+        record = store.book(req.service, day, req.time, req.customer_name, phone)
     except store.SlotUnavailable:
         slots = store.available_slots(day)
         return {
@@ -223,11 +274,59 @@ def api_events(since: int = 0) -> dict:
 
 @app.get("/api/config")
 def api_config() -> dict:
-    agent_id_file = Path(__file__).resolve().parent.parent / "agent_id.txt"
+    agent_id_file = ROOT / "agent_id.txt"
     agent_id = os.getenv("AGENT_ID") or (
         agent_id_file.read_text(encoding="utf-8").strip() if agent_id_file.exists() else ""
     )
     return {"agent_id": agent_id, "services": sorted(store.SERVICES)}
+
+
+@app.get("/api/demo-info")
+def api_demo_info() -> dict:
+    """Everything the agent knows, split by where it comes from.
+
+    agent.json is uploaded once and never changes during a call. The calendar
+    below is read live, on every single tool call.
+    """
+    definition = json.loads((ROOT / "agent.json").read_text(encoding="utf-8"))
+
+    days = []
+    cursor = date.today()
+    for _ in range(21):
+        if len(days) >= 5:
+            break
+        slots = store.available_slots(cursor, limit=99)
+        if store.is_open(cursor) and slots:
+            days.append({
+                "date": cursor.isoformat(),
+                "label": _speak_day(cursor),
+                "slots": [_speak_time(s) for s in slots],
+                "total": len(slots),
+            })
+        cursor += timedelta(days=1)
+
+    return {
+        "agent": {
+            "name": definition["name"],
+            "voice": definition["voice"]["voice_id"],
+            "keyterms": definition.get("keyterms", []),
+            "tools": [
+                {"name": t["name"], "url": t["http"]["url"].rsplit("/", 1)[-1]}
+                for t in definition.get("tools", [])
+            ],
+        },
+        "hours": {
+            "days": "Monday to Friday",
+            "open": _speak_time(f"{store.OPEN_HOUR:02d}:00"),
+            "close": _speak_time(f"{store.CLOSE_HOUR:02d}:00"),
+            "slot_minutes": store.SLOT_MINUTES,
+        },
+        "services": [
+            {"key": k, "label": v["label"], "minutes": v["minutes"]}
+            for k, v in sorted(store.SERVICES.items())
+        ],
+        "days": days,
+    }
 
 
 @app.get("/api/token")
